@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="src/Domain/DevForge.ControlPlane.Domain.csproj" />
+  <Project Path="src/Application/DevForge.ControlPlane.Application.csproj" />
+  <Project Path="src/Infrastructure/DevForge.ControlPlane.Infrastructure.csproj" />
+  <Project Path="src/WebApi/DevForge.ControlPlane.WebApi.csproj" />
+  <Project Path="src/BuildWorker/DevForge.ControlPlane.BuildWorker.csproj" />
+  <Project Path="src/QAWorker/DevForge.ControlPlane.QAWorker.csproj" />
+  <Project Path="src/DeploymentWorker/DevForge.ControlPlane.DeploymentWorker.csproj" />
+  <Project Path="src/RepairWorker/DevForge.ControlPlane.RepairWorker.csproj" />
+  <Project Path="src/FactoryAcceptanceTests/DevForge.ControlPlane.FactoryAcceptanceTests.csproj" />
+  <Project Path="src/MonitoringWorker/DevForge.ControlPlane.MonitoringWorker.csproj" />
+  <Project Path="src/OptimizationWorker/DevForge.ControlPlane.OptimizationWorker.csproj" />
+</Solution>

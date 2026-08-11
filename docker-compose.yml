@@ -1,0 +1,186 @@
+version: '3.8'
+
+services:
+  # 1. Nginx Reverse Proxy (SSL/Dynamic Routing)
+  nginx-proxy:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: devforge-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/data:/data
+      - ./infra/nginx/letsencrypt:/etc/letsencrypt
+    networks:
+      - devforge-ingress
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 256M
+
+  # 2. Control Plane Database (PostgreSQL)
+  postgres:
+    image: postgres:16-alpine
+    container_name: devforge-db
+    restart: always
+    environment:
+      POSTGRES_USER: devforge_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      POSTGRES_DB: devforge_control
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - devforge-internal
+    # I/O optimizations for NVMe SSD on Raspberry Pi 5
+    command: >
+      postgres 
+      -c shared_buffers=512MB 
+      -c work_mem=16MB 
+      -c maintenance_work_mem=128MB 
+      -c effective_cache_size=1536MB 
+      -c synchronous_commit=off 
+      -c wal_writer_delay=200ms
+    resources:
+      limits:
+        cpus: '1.50'
+        memory: 1024M
+
+  # 3. Cache and PubSub Message Broker (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: devforge-redis
+    restart: always
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    networks:
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 256M
+
+  # 4. Control Plane API (.NET 9 Web API)
+  control-plane-api:
+    image: devforge/control-plane-api:latest
+    container_name: devforge-api
+    restart: always
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=devforge_control;Username=devforge_admin;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      - Redis__Configuration=redis:6379
+      - AI__GeminiApiKey=${GEMINI_API_KEY}
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./workspaces:/app/workspaces
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '2.00'
+        memory: 1024M
+
+  # 5. DevForge Portal Dashboard UI (Next.js 15)
+  portal-ui:
+    image: devforge/portal-ui:latest
+    container_name: devforge-portal
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://control-plane-api:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - control-plane-api
+    networks:
+      - devforge-ingress
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '1.00'
+        memory: 512M
+
+  # 6. Observability - Monitoring Worker
+  monitoring-worker:
+    image: devforge/monitoring-worker:latest
+    container_name: devforge-monitoring-worker
+    restart: always
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=devforge_control;Username=devforge_admin;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      - Redis__Configuration=redis:6379
+      - RabbitMq__Host=postgres # Point to host running RabbitMQ or specify your host
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 256M
+
+  # 7. Observability - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: devforge-prometheus
+    restart: always
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /prometheus:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - control-plane-api
+      - monitoring-worker
+    networks:
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 256M
+
+  # 8. Observability - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: devforge-grafana
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning
+      - /grafana:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - devforge-ingress
+      - devforge-internal
+    resources:
+      limits:
+        cpus: '0.50'
+        memory: 256M
+
+networks:
+  devforge-ingress:
+    driver: bridge
+  devforge-internal:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Runtime workspaces (generated apps)
+workspaces/
+test_workspaces/
+
+# Docker / infra runtime data
+infra/nginx/data/
+infra/nginx/letsencrypt/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
